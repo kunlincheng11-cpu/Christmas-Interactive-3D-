@@ -1,0 +1,1382 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Merry Christmas · 3D Tree</title>
+
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  overflow: hidden;
+  background: #050912;
+  font-family: "Arial", sans-serif;
+  color: white;
+}
+
+#scene { width: 100vw; height: 100vh; }
+
+.panel {
+  position: fixed;
+  top: 8%;
+  left: 0;
+  width: 100%;
+  text-align: center;
+  pointer-events: none;
+  z-index: 2;
+}
+
+h1 {
+  font-family: Georgia, serif;
+  font-size: clamp(30px, 6vw, 58px);
+  letter-spacing: 7px;
+  color: #f6d995;
+  text-shadow: 0 0 25px #d5a64a;
+}
+
+.subtitle {
+  margin-top: 14px;
+  color: #c4cbd7;
+  font-size: 12px;
+  letter-spacing: 5px;
+}
+
+.controls {
+  position: fixed;
+  bottom: 8%;
+  left: 0;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  z-index: 3;
+}
+
+button {
+  padding: 13px 30px;
+  border: 1px solid #d7b66c;
+  border-radius: 30px;
+  background: rgba(15, 28, 36, .8);
+  color: #f5d994;
+  letter-spacing: 3px;
+  cursor: pointer;
+  transition: .3s;
+}
+
+button:hover {
+  background: #d7b66c;
+  color: #07101a;
+  box-shadow: 0 0 25px #d7b66c;
+}
+
+.hint {
+  position: fixed;
+  bottom: 4%;
+  width: 100%;
+  text-align: center;
+  color: #82909e;
+  font-size: 11px;
+  letter-spacing: 2px;
+  pointer-events: none;
+}
+.uploadBtn {
+  display: inline-block;
+  padding: 13px 25px;
+  border: 1px solid #d7b66c;
+  border-radius: 30px;
+  background: rgba(15, 28, 36, .85);
+  color: #f5d994;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: .3s;
+  margin-left: 12px;
+}
+
+.uploadBtn:hover {
+  background: #d7b66c;
+  color: #07101a;
+}
+
+#photoModal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgba(0,0,0,.88);
+  align-items: center;
+  justify-content: center;
+}
+
+#photoModal.show {
+  display: flex;
+}
+
+#previewPhoto {
+  max-width: 85vw;
+  max-height: 80vh;
+  object-fit: contain;
+  border: 8px solid white;
+  border-bottom: 35px solid white;
+  box-shadow: 0 0 40px rgba(255,215,150,.35);
+}
+
+#closePhoto {
+  position: absolute;
+  top: 25px;
+  right: 35px;
+  color: white;
+  font-size: 42px;
+  cursor: pointer;
+}
+#cameraPanel {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 190px;
+  padding: 8px;
+  background: rgba(10, 20, 30, 0.85);
+  border: 1px solid rgba(255, 215, 140, 0.65);
+  border-radius: 14px;
+  z-index: 10;
+  display: none;
+}
+
+#cameraPanel video {
+  width: 100%;
+  display: block;
+  border-radius: 9px;
+  transform: scaleX(-1);
+}
+
+#cameraStatus {
+  padding-top: 8px;
+  text-align: center;
+  font-size: 11px;
+  color: #f5d994;
+  letter-spacing: 1px;
+}
+
+.controls {
+  gap: 12px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="panel">
+  <h1>MERRY CHRISTMAS</h1>
+  <div class="subtitle">A LITTLE MAGIC FOR YOU</div>
+</div>
+
+<div id="scene"></div>
+
+
+<div class="controls">
+    <button id="cameraToggle">开启摄像头 ✋</button>
+  <button id="toggle">散开粒子 ✦</button>
+  <label for="photoInput" class="uploadBtn">
+    上传照片 ♡
+  </label>
+  <input
+    type="file"
+    id="photoInput"
+    accept="image/*"
+    multiple
+    hidden
+  >
+</div>
+
+<div id="photoModal">
+  <span id="closePhoto">×</span>
+  <img id="previewPhoto">
+</div>
+
+<div class="hint">DRAG TO ROTATE · SCROLL TO ZOOM</div>
+<div id="cameraPanel">
+  <video id="cameraVideo" autoplay playsinline muted></video>
+  <div id="cameraStatus">摄像头尚未开启</div>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from "three";
+
+import { OrbitControls } from
+"three/addons/controls/OrbitControls.js";
+
+import {
+  FilesetResolver,
+  HandLandmarker
+} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs";
+
+const scene = new THREE.Scene();
+// ===== 金色流星雨系统 =====
+const meteorCount = 45;
+const meteors = [];
+
+for (let i = 0; i < meteorCount; i++) {
+  const meteor = new THREE.Group();
+
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.045, 8, 8),
+    new THREE.MeshBasicMaterial({
+      color: 0xffe6a3
+    })
+  );
+
+  const tailGeometry = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(0, 1.2, 0)
+  ]);
+
+  const tail = new THREE.Line(
+    tailGeometry,
+    new THREE.LineBasicMaterial({
+      color: 0xffc45e,
+      transparent: true,
+      opacity: 0.8
+    })
+  );
+
+  meteor.add(head);
+  meteor.add(tail);
+
+  meteor.visible = false;
+  scene.add(meteor);
+
+  meteors.push({
+    group: meteor,
+    speed: 0.08 + Math.random() * 0.12,
+    active: false
+  });
+}
+// ===== 金色魔法能量圆环 =====
+const pulseRingGeometry = new THREE.RingGeometry(0.1, 0.16, 96);
+
+const pulseRingMaterial = new THREE.MeshBasicMaterial({
+  color: 0xffd782,
+  transparent: true,
+  opacity: 0,
+  side: THREE.DoubleSide,
+  depthWrite: false
+});
+
+const pulseRing = new THREE.Mesh(
+  pulseRingGeometry,
+  pulseRingMaterial
+);
+
+pulseRing.position.set(0, 0, 0);
+scene.add(pulseRing);
+
+let pulseRingActive = false;
+let pulseRingScale = 0.1;
+// ===== 圣诞树统一旋转容器 =====
+const treeGroup = new THREE.Group();
+scene.add(treeGroup);
+// ===== 3D照片相框系统 =====
+
+const photoGroup = new THREE.Group();
+scene.add(photoGroup);
+
+const photoInput = document.getElementById("photoInput");
+const photoModal = document.getElementById("photoModal");
+const previewPhoto = document.getElementById("previewPhoto");
+const closePhoto = document.getElementById("closePhoto");
+
+const photoCards = [];
+
+photoInput.addEventListener("change", (event) => {
+  const files = Array.from(event.target.files);
+
+  files.forEach((file) => {
+    if (!file.type.startsWith("image/")) return;
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const img = new Image();
+
+      img.onload = () => {
+        // 创建拍立得画布
+        const canvas = document.createElement("canvas");
+        canvas.width = 512;
+        canvas.height = 640;
+
+        const ctx = canvas.getContext("2d");
+
+        // 白色相框
+        ctx.fillStyle = "#fffaf0";
+        ctx.fillRect(0, 0, 512, 640);
+
+        // 照片区域
+        const ratio = Math.min(
+          472 / img.width,
+          530 / img.height
+        );
+
+        const w = img.width * ratio;
+        const h = img.height * ratio;
+
+        ctx.drawImage(
+          img,
+          (512 - w) / 2,
+          18 + (530 - h) / 2,
+          w,
+          h
+        );
+
+        // 底部文字
+        ctx.fillStyle = "#8d7654";
+        ctx.font = "24px Georgia";
+        ctx.textAlign = "center";
+        ctx.fillText(
+          "Merry Christmas ♡",
+          256,
+          600
+        );
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+
+        const material = new THREE.MeshBasicMaterial({
+          map: texture,
+          side: THREE.DoubleSide,
+          transparent: true
+        });
+
+        const card = new THREE.Mesh(
+          new THREE.PlaneGeometry(1.35, 1.7),
+          material
+        );
+
+        const index = photoCards.length;
+        const angle = index * 2.4;
+        const radius = 4.5 + (index % 2) * 0.5;
+
+        card.position.set(
+          Math.cos(angle) * radius,
+          (index % 5 - 2) * 0.85,
+          Math.sin(angle) * radius
+        );
+
+        card.lookAt(0, card.position.y, 0);
+
+       card.userData.originalY = card.position.y;
+card.userData.phase = Math.random() * Math.PI * 2;
+card.userData.imageURL = reader.result;
+
+// 保存照片原始位置
+card.userData.home = card.position.clone();
+
+// 设置照片爆散位置
+card.userData.burst = new THREE.Vector3(
+  (Math.random() - 0.5) * 16,
+  (Math.random() - 0.5) * 12,
+  (Math.random() - 0.5) * 16
+);
+
+// 保存照片原始旋转
+card.userData.homeRotation = card.rotation.clone();
+
+        photoGroup.add(card);
+        photoCards.push(card);
+      };
+
+      img.src = reader.result;
+    };
+
+    reader.readAsDataURL(file);
+  });
+
+  // 允许再次选择相同照片
+  photoInput.value = "";
+});
+
+// 点击照片放大
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+
+function checkPhotoClick(event) {
+  if (!renderer || !camera || photoCards.length === 0) {
+    return false;
+  }
+
+  const rect = renderer.domElement.getBoundingClientRect();
+
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(pointer, camera);
+
+  const hits = raycaster.intersectObjects(photoCards, false);
+
+  if (hits.length > 0) {
+    const clickedCard = hits[0].object;
+
+    previewPhoto.src = clickedCard.userData.imageURL;
+    photoModal.classList.add("show");
+
+    return true;
+  }
+
+  return false;
+}
+
+closePhoto.addEventListener("click", () => {
+  photoModal.classList.remove("show");
+});
+
+photoModal.addEventListener("click", (event) => {
+  if (event.target === photoModal) {
+    photoModal.classList.remove("show");
+  }
+});
+
+scene.background = new THREE.Color(0x050912);
+scene.fog = new THREE.FogExp2(0x050912, 0.025);
+
+const camera = new THREE.PerspectiveCamera(
+  45, window.innerWidth / window.innerHeight, 0.1, 1000
+);
+camera.position.set(0, 3, 17);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.5;
+document.getElementById("scene").appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+// ===== 摄像头启动系统 =====
+
+const cameraToggle = document.getElementById("cameraToggle");
+const cameraVideo = document.getElementById("cameraVideo");
+const cameraPanel = document.getElementById("cameraPanel");
+const cameraStatus = document.getElementById("cameraStatus");
+
+let cameraStream = null;
+// ===== AI手部识别 =====
+
+let handLandmarker = null;
+let lastVideoTime = -1;
+let currentGesture = "等待手势";
+let lastMeteorTime = 0;
+// ===== 捏合手势控制 =====
+let isPinching = false;
+let lastPinchTime = 0;
+let dustPulse = 0;
+// ===== 圣诞树魔法召唤状态 =====
+let summonEffect = 0;
+// ===== 双手缩放控制 =====
+let targetTreeScale = 1;
+// ===== 圣诞树手势移动控制 =====
+let targetTreeX = 0;
+let targetTreeY = 0;
+async function initHandTracking() {
+  cameraStatus.textContent = "正在加载AI手势模型...";
+
+  const vision = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm"
+  );
+
+  handLandmarker = await HandLandmarker.createFromOptions(
+    vision,
+    {
+      baseOptions: {
+        modelAssetPath:
+          "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+        delegate: "GPU"
+      },
+      runningMode: "VIDEO",
+      numHands: 2
+    }
+  );
+
+  cameraStatus.textContent = "AI手势识别已就绪";
+}
+// ===== 发射金色流星雨 =====
+function launchMeteorShower() {
+  meteors.forEach((meteor) => {
+    if (meteor.active) return;
+
+    meteor.active = true;
+    meteor.group.visible = true;
+
+    meteor.group.position.set(
+      (Math.random() - 0.5) * 16,
+      8 + Math.random() * 8,
+      (Math.random() - 0.5) * 8
+    );
+  });
+}
+function detectHandGesture() {
+  if (
+    !handLandmarker ||
+    !cameraStream ||
+    cameraVideo.readyState < 2
+  ) {
+    requestAnimationFrame(detectHandGesture);
+    return;
+  }
+
+  if (cameraVideo.currentTime !== lastVideoTime) {
+    lastVideoTime = cameraVideo.currentTime;
+
+    const result = handLandmarker.detectForVideo(
+      cameraVideo,
+      performance.now()
+    );
+// ===== 双手张开检测 =====
+let bothHandsOpen = false;
+
+if (result.landmarks.length >= 2) {
+  let openHandsCount = 0;
+
+  for (let h = 0; h < 2; h++) {
+    const currentHand = result.landmarks[h];
+
+    const tips = [8, 12, 16, 20];
+    const pips = [6, 10, 14, 18];
+
+    let fingers = 0;
+
+    tips.forEach((tip, i) => {
+      if (currentHand[tip].y < currentHand[pips[i]].y) {
+        fingers++;
+      }
+    });
+
+    if (fingers >= 3) {
+      openHandsCount++;
+    }
+  }
+
+  bothHandsOpen = openHandsCount === 2;
+}
+
+// 双手张开时，每隔一段时间触发一次流星雨
+const now = performance.now();
+
+if (bothHandsOpen && now - lastMeteorTime > 5000) {
+  lastMeteorTime = now;
+  launchMeteorShower();
+}
+    if (result.landmarks.length > 0) {
+      const hand = result.landmarks[0];
+      // ===== 检测拇指与食指是否捏合 =====
+const thumbTip = hand[4];
+const indexTip = hand[8];
+
+const pinchDx = thumbTip.x - indexTip.x;
+const pinchDy = thumbTip.y - indexTip.y;
+
+const pinchDistance = Math.sqrt(
+  pinchDx * pinchDx + pinchDy * pinchDy
+);
+
+// 距离小于 0.05，判断为捏合
+const now = performance.now();
+
+if (pinchDistance < 0.05 && !isPinching) {
+  isPinching = true;
+
+  // 防止短时间内连续触发
+  if (now - lastPinchTime > 1000) {
+    lastPinchTime = now;
+    window.pinchPulse = true;
+  }
+
+} else if (pinchDistance > 0.08) {
+  isPinching = false;
+}
+      // ===== 双手距离检测 =====
+
+if (result.landmarks.length >= 2) {
+
+  const hand1 = result.landmarks[0][9];
+  const hand2 = result.landmarks[1][9];
+
+  // 计算两只手掌中心之间的距离
+  const dx = hand1.x - hand2.x;
+  const dy = hand1.y - hand2.y;
+
+  const distance = Math.sqrt(dx * dx + dy * dy);
+
+  // 距离越大，圣诞树越大
+  targetTreeScale = THREE.MathUtils.clamp(
+    0.8 + distance * 1.5,
+    0.8,
+    1.6
+  );
+
+  cameraStatus.textContent =
+    "双手控制中 · 缩放：" +
+    targetTreeScale.toFixed(2);
+
+} else {
+  // 只有一只手时恢复默认大小
+  targetTreeScale = 1;
+}
+
+// ===== 食指指尖追踪 =====
+const fingerX = hand[8].x;
+const fingerY = hand[8].y;
+
+// 食指位置控制圣诞树移动
+targetTreeX = (0.5 - fingerX) * 5;
+targetTreeY = (0.5 - fingerY) * 4;
+
+// 保留原来的旋转控制
+window.handControlX = (0.5 - fingerX) * 2;
+window.handControlY = (0.5 - fingerY) * 2;
+
+
+// 保留原来的旋转控制
+window.handControlX = (0.5 - fingerX) * 2;
+window.handControlY = (0.5 - fingerY) * 2;
+      // 计算四根手指是否伸直
+      const tips = [8, 12, 16, 20];
+      const pips = [6, 10, 14, 18];
+
+      let openFingers = 0;
+
+      tips.forEach((tip, i) => {
+        if (hand[tip].y < hand[pips[i]].y) {
+          openFingers++;
+        }
+      });
+
+     if (openFingers >= 3) {
+  currentGesture = "张开手掌";
+  scattered = true;
+} else {
+  currentGesture = "魔法召唤中 ✨";
+
+  if (scattered) {
+    summonEffect = 1;
+  }
+
+  scattered = false;
+}
+
+      cameraStatus.textContent =
+        "识别到：" + currentGesture;
+
+      button.textContent = scattered
+        ? "重新聚合 ✦"
+        : "散开粒子 ✦";
+
+    } else {
+      currentGesture = "未检测到手掌";
+      cameraStatus.textContent = currentGesture;
+    }
+  }
+
+  requestAnimationFrame(detectHandGesture);
+}
+cameraToggle.addEventListener("click", async () => {
+
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(track => track.stop());
+    cameraStream = null;
+
+    cameraVideo.srcObject = null;
+    cameraPanel.style.display = "none";
+    cameraToggle.textContent = "开启摄像头 ✋";
+
+    return;
+  }
+
+  try {
+    cameraStatus.textContent = "正在连接摄像头...";
+
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: "user",
+        width: 640,
+        height: 480
+      },
+      audio: false
+    });
+
+    cameraVideo.srcObject = cameraStream;
+await cameraVideo.play();
+
+cameraPanel.style.display = "block";
+cameraToggle.textContent = "关闭摄像头";
+
+await initHandTracking();
+
+detectHandGesture();
+
+  } catch (error) {
+  console.error("摄像头启动失败：", error);
+
+  cameraStatus.textContent = "摄像头启动失败，请检查权限";
+
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(track => track.stop());
+  }
+
+  cameraStream = null;
+  cameraVideo.srcObject = null;
+  cameraPanel.style.display = "none";
+  cameraToggle.textContent = "开启摄像头 ✋";
+}
+});
+controls.enableDamping = true;
+controls.autoRotate = false;
+controls.autoRotateSpeed = 0.5;
+controls.minDistance = 9;
+controls.maxDistance = 25;
+
+scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+
+const light = new THREE.PointLight(0xffd88a, 100, 40);
+light.position.set(0, 7, 5);
+scene.add(light);
+
+// 圣诞树粒子
+const COUNT = 6500;
+const positions = new Float32Array(COUNT * 3);
+const targets = new Float32Array(COUNT * 3);
+const colors = new Float32Array(COUNT * 3);
+
+const green = new THREE.Color(0x2fbd83);
+const gold = new THREE.Color(0xf5c76b);
+const red = new THREE.Color(0xd95a55);
+
+for (let i = 0; i < COUNT; i++) {
+  const height = Math.random() * 9;
+  const angle = height * 3.2 + Math.random() * Math.PI * 2;
+  const radius = (1 - height / 9) * 3.2;
+  const r = radius * Math.sqrt(Math.random());
+
+  const x = Math.cos(angle) * r;
+  const y = height - 4.5;
+  const z = Math.sin(angle) * r;
+
+  const index = i * 3;
+  targets[index] = x;
+  targets[index + 1] = y;
+  targets[index + 2] = z;
+
+  positions[index] = x;
+  positions[index + 1] = y;
+  positions[index + 2] = z;
+
+  const c = Math.random();
+  const color = c > 0.92 ? gold : c > 0.85 ? red : green;
+  colors[index] = color.r;
+  colors[index + 1] = color.g;
+  colors[index + 2] = color.b;
+}
+
+const geometry = new THREE.BufferGeometry();
+geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+const material = new THREE.PointsMaterial({
+  size: 0.055,
+  vertexColors: true,
+  transparent: true,
+  opacity: 0.95,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false
+});
+
+const tree = new THREE.Points(geometry, material);
+treeGroup.add(tree);
+
+// 星星
+const starShape = new THREE.Shape();
+starShape.moveTo(0, 0.8);
+for (let i = 1; i < 10; i++) {
+  const angle = Math.PI / 2 + i * Math.PI / 5;
+  const radius = i % 2 === 0 ? 0.8 : 0.35;
+  starShape.lineTo(
+    Math.cos(angle) * radius,
+    Math.sin(angle) * radius
+  );
+}
+starShape.closePath();
+
+const starGeometry = new THREE.ShapeGeometry(starShape);
+const starMaterial = new THREE.MeshBasicMaterial({
+  color: 0xffdf91,
+  side: THREE.DoubleSide
+});
+const star = new THREE.Mesh(starGeometry, starMaterial);
+star.position.y = 5.1;
+treeGroup.add(star);
+
+// 星星外部光晕
+const glowGeometry = new THREE.SphereGeometry(0.65, 32, 32);
+
+const glowMaterial = new THREE.MeshBasicMaterial({
+  color: 0xffd98a,
+  transparent: true,
+  opacity: 0.12,
+  depthWrite: false
+});
+
+const starGlow = new THREE.Mesh(
+  glowGeometry,
+  glowMaterial
+);
+
+starGlow.position.copy(star.position);
+treeGroup.add(starGlow);
+
+
+// 装饰球
+const ornaments = [];
+for (let i = 0; i < 45; i++) {
+  const height = Math.random() * 7.5 - 3.8;
+  const radius = (1 - (height + 4.5) / 9) * 3.1;
+  const angle = Math.random() * Math.PI * 2;
+
+  const ball = new THREE.Mesh(
+    new THREE.SphereGeometry(0.075, 12, 12),
+    new THREE.MeshStandardMaterial({
+      color: i % 3 === 0 ? 0xffd17b :
+             i % 3 === 1 ? 0xe75b55 : 0xf2eee0,
+      emissive: 0x553311,
+      metalness: 0.5,
+      roughness: 0.25
+    })
+  );
+
+  ball.position.set(
+    Math.cos(angle) * radius,
+    height,
+    Math.sin(angle) * radius
+  );
+  tree.add(ball);
+  ornaments.push(ball);
+}
+
+// ===== 圣诞树螺旋灯串 =====
+
+
+// ===== 高级金色螺旋灯带 =====
+
+const fairyLights = [];
+const spiralPoints = [];
+
+const bulbGeometry = new THREE.SphereGeometry(
+  0.055, 12, 12
+);
+
+for (let i = 0; i <= 480; i++) {
+  const p = i / 480;
+
+  const y = p * 8 - 4;
+  const radius = (1 - p) * 3.25 + 0.08;
+  const angle = p * Math.PI * 20;
+
+  const x = Math.cos(angle) * radius;
+  const z = Math.sin(angle) * radius;
+
+  const point = new THREE.Vector3(x, y, z);
+  spiralPoints.push(point);
+
+  if (i % 1 === 0) {
+    const color = i % 4 === 0 ? 0xffe5a0 :
+                  i % 4 === 1 ? 0xffbd55 :
+                  i % 4 === 2 ? 0xffffff :
+                  0xff8b68;
+
+    const mat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 1
+    });
+
+    const bulb = new THREE.Mesh(
+      bulbGeometry,
+      mat
+    );
+
+    bulb.position.copy(point);
+   treeGroup.add(bulb);
+
+    fairyLights.push({
+      mesh: bulb,
+      material: mat,
+      phase: Math.random() * Math.PI * 2
+    });
+  }
+}
+
+// 连续螺旋金色灯带
+const spiralCurve = new THREE.CatmullRomCurve3(
+  spiralPoints
+);
+
+const spiralGeometry = new THREE.TubeGeometry(
+  spiralCurve,
+  1000,
+  0.012,
+  6,
+  false
+);
+
+const spiralMaterial = new THREE.MeshBasicMaterial({
+  color: 0xffd88a,
+  transparent: true,
+  opacity: 0.65
+});
+
+const spiralLine = new THREE.Mesh(
+  spiralGeometry,
+  spiralMaterial
+);
+
+treeGroup.add(spiralLine);
+
+// ===== 金色星尘爆炸系统 =====
+
+const dustCount = 1000;
+
+const dustPositions = new Float32Array(dustCount * 3);
+const dustHome = new Float32Array(dustCount * 3);
+const dustBurst = new Float32Array(dustCount * 3);
+
+for (let i = 0; i < dustCount; i++) {
+  const index = i * 3;
+
+  // 星尘原始位置：围绕圣诞树
+  const height = Math.random() * 8 - 4;
+  const radius = Math.random() * 3.5;
+
+  const angle = Math.random() * Math.PI * 2;
+
+  dustHome[index] = Math.cos(angle) * radius;
+  dustHome[index + 1] = height;
+  dustHome[index + 2] = Math.sin(angle) * radius;
+
+  // 爆炸位置：向外扩散
+  dustBurst[index] =
+    dustHome[index] + (Math.random() - 0.5) * 12;
+
+  dustBurst[index + 1] =
+    dustHome[index + 1] + (Math.random() - 0.5) * 12;
+
+  dustBurst[index + 2] =
+    dustHome[index + 2] + (Math.random() - 0.5) * 12;
+
+  dustPositions[index] = dustHome[index];
+  dustPositions[index + 1] = dustHome[index + 1];
+  dustPositions[index + 2] = dustHome[index + 2];
+}
+
+const dustGeometry = new THREE.BufferGeometry();
+
+dustGeometry.setAttribute(
+  "position",
+  new THREE.BufferAttribute(dustPositions, 3)
+);
+
+const dustMaterial = new THREE.PointsMaterial({
+  color: 0xffd782,
+  size: 0.065,
+  transparent: true,
+  opacity: 0,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false
+});
+
+const goldenDust = new THREE.Points(
+  dustGeometry,
+  dustMaterial
+);
+
+scene.add(goldenDust);
+
+// ===== 保存所有装饰物的初始位置 =====
+
+// 保存金色灯珠的位置
+fairyLights.forEach((light) => {
+  light.home = light.mesh.position.clone();
+
+  light.burst = new THREE.Vector3(
+    (Math.random() - 0.5) * 12,
+    (Math.random() - 0.5) * 12,
+    (Math.random() - 0.5) * 12
+  );
+});
+
+// 保存装饰球的位置
+ornaments.forEach((ball) => {
+  ball.userData.home = ball.position.clone();
+
+  ball.userData.burst = new THREE.Vector3(
+    (Math.random() - 0.5) * 12,
+    (Math.random() - 0.5) * 12,
+    (Math.random() - 0.5) * 12
+  );
+});
+
+
+// 飘雪
+const snowCount = 1200;
+const snowPositions = new Float32Array(snowCount * 3);
+
+for (let i = 0; i < snowCount; i++) {
+  snowPositions[i * 3] = (Math.random() - 0.5) * 25;
+  snowPositions[i * 3 + 1] = Math.random() * 20 - 10;
+  snowPositions[i * 3 + 2] = (Math.random() - 0.5) * 20;
+}
+
+const snowGeometry = new THREE.BufferGeometry();
+snowGeometry.setAttribute(
+  "position", new THREE.BufferAttribute(snowPositions, 3)
+);
+
+const snow = new THREE.Points(
+  snowGeometry,
+  new THREE.PointsMaterial({
+    color: 0xffffff,
+    size: 0.045,
+    transparent: true,
+    opacity: 0.75
+  })
+);
+scene.add(snow);
+
+// 粒子散开与聚合
+let scattered = false;
+const button = document.getElementById("toggle");
+
+
+function toggleTree() {
+  scattered = !scattered;
+
+  button.textContent = scattered
+    ? "重新聚合 ✦"
+    : "散开粒子 ✦";
+}
+
+// 底部按钮控制
+button.addEventListener("click", toggleTree);
+
+
+renderer.domElement.addEventListener("click", (event) => {
+  const clickedPhoto = checkPhotoClick(event);
+
+  if (clickedPhoto) {
+    event.stopPropagation();
+    return;
+  }
+
+  toggleTree();
+});
+
+
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+ // ===== 金色流星雨下落动画 =====
+meteors.forEach((meteor) => {
+  if (!meteor.active) return;
+
+  meteor.group.position.y -= meteor.speed;
+  meteor.group.position.x += meteor.speed * 0.25;
+
+  if (meteor.group.position.y < -10) {
+    meteor.group.visible = false;
+    meteor.active = false;
+  }
+});
+// ===== 照片悬浮与旋转 =====
+
+photoGroup.rotation.y = scattered
+  ? 0
+  : Math.sin(t * 0.15) * 0.15;
+
+photoCards.forEach((card) => {
+
+  const target = scattered
+    ? card.userData.home.clone().add(card.userData.burst)
+    : card.userData.home;
+
+  card.position.lerp(target, 0.035);
+
+  // 爆散时轻微旋转
+  if (scattered) {
+    card.rotation.x += 0.008;
+    card.rotation.y += 0.012;
+  } else {
+    card.rotation.x +=
+      (card.userData.homeRotation.x - card.rotation.x) * 0.04;
+
+    card.rotation.y +=
+      (card.userData.homeRotation.y - card.rotation.y) * 0.04;
+
+    card.rotation.z +=
+      (card.userData.homeRotation.z - card.rotation.z) * 0.04;
+
+    // 聚合后恢复轻微悬浮
+    card.position.y +=
+      Math.sin(t * 1.2 + card.userData.phase) * 0.002;
+  }
+
+  card.lookAt(
+    camera.position.x,
+    card.position.y,
+    camera.position.z
+  );
+});
+// ===== 捏合手势：金色能量脉冲 =====
+if (window.pinchPulse) {
+  for (let i = 0; i < dustCount; i++) {
+    const index = i * 3;
+
+    // 让星尘向四周扩散
+    dustBurst[index] =
+      dustHome[index] +
+      (Math.random() - 0.5) * 18;
+
+    dustBurst[index + 1] =
+      dustHome[index + 1] +
+      (Math.random() - 0.5) * 18;
+
+    dustBurst[index + 2] =
+      dustHome[index + 2] +
+      (Math.random() - 0.5) * 18;
+  }
+
+  dustPulse = 1;
+  pulseRingActive = true;
+pulseRingScale = 0.1;
+pulseRingMaterial.opacity = 1;
+pulseRing.scale.setScalar(pulseRingScale);
+  window.pinchPulse = false;
+}
+// ===== 金色星尘动态爆炸 =====
+// ===== 魔法能量波纹动画 =====
+if (pulseRingActive) {
+  pulseRingScale += 0.055;
+
+  pulseRing.scale.setScalar(pulseRingScale);
+
+  pulseRingMaterial.opacity -= 0.018;
+
+  // 缓慢向上移动
+  pulseRing.position.y += 0.008;
+
+  if (pulseRingMaterial.opacity <= 0) {
+    pulseRingMaterial.opacity = 0;
+    pulseRingActive = false;
+    pulseRing.position.y = 0;
+  }
+}
+// 手掌控制星尘中心
+const handDustX =
+  typeof window.handControlX === "number"
+    ? window.handControlX * 3
+    : 0;
+
+const handDustY =
+  typeof window.handControlY === "number"
+    ? window.handControlY * 3
+    : 0;
+const dustPos = dustGeometry.attributes.position.array;
+
+for (let i = 0; i < dustCount; i++) {
+  const index = i * 3;
+
+const targetX = scattered
+  ? dustBurst[index] + handDustX
+  : dustHome[index] + handDustX * 0.35;
+
+ const targetY = scattered
+  ? dustBurst[index + 1] + handDustY
+  : dustHome[index + 1] + handDustY * 0.35;
+
+  const targetZ = scattered
+    ? dustBurst[index + 2]
+    : dustHome[index + 2];
+
+  dustPos[index] +=
+    (targetX - dustPos[index]) * 0.035;
+
+  dustPos[index + 1] +=
+    (targetY - dustPos[index + 1]) * 0.035;
+
+  dustPos[index + 2] +=
+    (targetZ - dustPos[index + 2]) * 0.035;
+}
+
+dustGeometry.attributes.position.needsUpdate = true;
+
+// 星尘淡入淡出
+const dustOpacity = Math.max(scattered ? 0.9 : 0, dustPulse);
+
+dustMaterial.opacity += (dustOpacity - dustMaterial.opacity) * 0.08;
+
+dustPulse *= 0.94;
+
+if (dustPulse < 0.01) {
+  dustPulse = 0;
+}
+
+
+// ===== 灯珠闪烁 + 爆散动画 =====
+
+fairyLights.forEach((light) => {
+  const glow = 0.35 + 0.65 *
+    (0.5 + 0.5 * Math.sin(t * 3 + light.phase));
+
+  light.material.opacity = glow;
+
+  light.mesh.scale.setScalar(
+    0.8 + glow * 0.5
+  );
+
+  const target = scattered
+    ? light.home.clone().add(light.burst)
+    : light.home;
+
+  light.mesh.position.lerp(target, 0.045);
+});
+
+// ===== 装饰球爆散动画 =====
+
+ornaments.forEach((ball) => {
+  const target = scattered
+    ? ball.userData.home.clone().add(ball.userData.burst)
+    : ball.userData.home;
+
+  ball.position.lerp(target, 0.045);
+});
+
+
+
+// 灯带微弱呼吸
+
+// ===== 灯带呼吸与爆散隐藏 =====
+
+const targetOpacity = scattered ? 0 : 0.65;
+
+spiralMaterial.opacity +=
+  (targetOpacity - spiralMaterial.opacity) * 0.06;
+
+
+// 金色灯珠闪烁动画
+fairyLights.forEach((light) => {
+  const glow = 0.45 + 0.55 *
+    (0.5 + 0.5 * Math.sin(t * 4 + light.phase));
+
+  light.material.opacity = glow;
+  light.mesh.scale.setScalar(0.85 + glow * 0.35);
+});
+
+
+
+  const pos = geometry.attributes.position.array;
+
+  for (let i = 0; i < COUNT; i++) {
+    const index = i * 3;
+
+    const spread = scattered ? 1 : 0;
+    const burst = Math.sin(i * 12.9898) * 4;
+
+
+const explosionX = Math.sin(i * 12.9898) * 7;
+const explosionY = Math.cos(i * 7.233) * 7;
+const explosionZ = Math.sin(i * 3.117) * 7;
+
+const tx = targets[index] + spread * explosionX;
+const ty = targets[index + 1] + spread * explosionY;
+const tz = targets[index + 2] + spread * explosionZ;
+
+
+   const summonSpeed = 0.035 + summonEffect * 0.09;
+
+pos[index] += (tx - pos[index]) * summonSpeed;
+pos[index + 1] += (ty - pos[index + 1]) * summonSpeed;
+pos[index + 2] += (tz - pos[index + 2]) * summonSpeed;
+  }
+
+  geometry.attributes.position.needsUpdate = true;
+  // 召唤能量逐渐消退
+summonEffect *= 0.96;
+
+if (summonEffect < 0.01) {
+  summonEffect = 0;
+}
+
+  star.rotation.z = Math.sin(t * 1.5) * 0.08;
+starGlow.scale.setScalar(
+  1 + Math.sin(t * 2) * 0.12 + summonEffect * 0.8
+);
+
+starGlow.material.opacity =
+  0.12 + summonEffect * 0.65;
+  star.material.color.setHSL(0.12, 0.8, 0.65 + Math.sin(t * 3) * 0.1);
+
+  for (let i = 0; i < snowCount; i++) {
+    const index = i * 3;
+    snowPositions[index + 1] -= 0.025;
+    snowPositions[index] += Math.sin(t + i) * 0.002;
+
+    if (snowPositions[index + 1] < -10) {
+      snowPositions[index + 1] = 10;
+    }
+  }
+
+  snowGeometry.attributes.position.needsUpdate = true;
+  // ===== 双手控制圣诞树大小 =====
+const currentScale = treeGroup.scale.x;
+
+const smoothScale =
+  currentScale +
+  (targetTreeScale - currentScale) * 0.06;
+
+treeGroup.scale.setScalar(smoothScale);
+// ===== 圣诞树跟随手掌移动 =====
+// ===== 食指控制圣诞树平滑移动 =====
+treeGroup.position.x +=
+  (targetTreeX - treeGroup.position.x) * 0.07;
+
+treeGroup.position.y +=
+  (targetTreeY - treeGroup.position.y) * 0.07;
+// ===== 整棵圣诞树手势旋转 =====
+
+if (typeof window.handControlX === "number") {
+  const targetRotation = window.handControlX * 1.5;
+
+  treeGroup.rotation.y +=
+    (targetRotation - treeGroup.rotation.y) * 0.035;
+}
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+animate();
+
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+</script>
+
+</body>
+</html>
